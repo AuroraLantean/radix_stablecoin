@@ -6,6 +6,7 @@ blueprint! {
     struct StableCoin {
         token_vault: Vault,
         auth: Vault,
+        total_supply: Decimal,
         version: u16,
         admin_addr: ResourceAddress,
     }
@@ -62,11 +63,12 @@ blueprint! {
                     "get_data",
                     rule!(allow_all), AccessRule::DenyAll
                 )
-                .default(rule!(allow_all), AccessRule::DenyAll);
+                .default(token_rule, AccessRule::DenyAll);
             info!("check4");
             let mut component = Self {
                 token_vault: Vault::with_bucket(my_bucket),
                 auth: Vault::with_bucket(auth_badge),
+                total_supply,
                 version: 1,
                 admin_addr: admin_badge.resource_address(),
             }
@@ -74,61 +76,63 @@ blueprint! {
             component.add_access_check(method_rule);
             info!("check5");
             (component.globalize(), admin_badge, wd_badge)
-        }
+        }// new()
 
-        pub fn mint_to_bucket(&self, amount: Decimal) -> Bucket {
+        pub fn mint_to_bucket(&mut self, amount: Decimal) -> Bucket {
           info!("mint_to_bucket");
           assert!(amount > dec!(0), "invalid amount");
+          info!("self.total_supply:{}", self.total_supply);
+          self.total_supply += amount;
+          info!("self.total_supply:{}", self.total_supply);
           self.auth.authorize(|| {
             borrow_resource_manager!(self.token_vault.resource_address()).mint(amount)
           })
         }
-        pub fn mint_in_vault(&mut self, amount: Decimal, proof: Proof) {
-          info!("mint_in_vault");
+        pub fn mint_to_vault(&mut self, amount: Decimal) {
+          info!("mint_to_vault");
           assert!(amount > dec!(0), "invalid amount");
-          proof.validate_proof(ProofValidationMode::ValidateContainsAmount(
-            self.admin_addr,
-            dec!("1")
-          )).expect("invalid badge");
-
           let new_tokens = borrow_resource_manager!(self.token_vault.resource_address())
           .mint(amount);
           self.token_vault.put(new_tokens);
+          self.total_supply += amount;
           info!("total token amount: {}", self.token_vault.amount());
         }
 
-        // deposit this amount directly to a 3rd party vault ??
-        pub fn withdraw_from_vault(&mut self, amount: Decimal) -> Bucket {
+        //pub fn withdraw_external(&self, amount: Decimal) {
+          //send 3rd party tokens first... why not just send them what they want first??
+        //}
+        pub fn withdraw(&mut self, amount: Decimal) -> Bucket {
+          info!("withdraw_from_vault");
           //check set_withdrawable_vault()
           assert!(amount > dec!(0), "invalid amount");
           assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
           self.token_vault.take(amount)
         }
-        pub fn deposit_to_vault(&mut self, amount: Bucket) {
-          assert!(amount.amount() > dec!(0), "invalid amount");
-          self.token_vault.put(amount)
+        pub fn deposit(&mut self, amount: Decimal, mut bucket: Bucket) {
+          assert!(amount <= bucket.amount(), "not enough amount in your bucket");
+          self.token_vault.put(bucket.take(amount))
         }
 
-        pub fn burn_in_vault(&mut self, amount: Decimal, proof: Proof) {
+        pub fn burn_in_vault(&mut self, amount: Decimal) {
+          info!("burn_in_vault");
           assert!(amount > dec!(0), "invalid amount");
           assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
-          proof.validate_proof(ProofValidationMode::ValidateContainsAmount(
-            self.admin_addr,
-            dec!("1")
-          )).expect("invalid badge");
+          self.total_supply -= amount;
           self.token_vault.take(amount).burn();
         }
-        pub fn burn_from_bucket(&mut self, amount: Decimal, mut bucket: Bucket) {
+        pub fn burn_in_bucket(&mut self, amount: Decimal, mut bucket: Bucket) {
+          info!("burn_in_bucket");
           assert!(amount > dec!(0), "invalid amount");
           assert!(bucket.amount() > amount, "invalid amount");
           assert!(bucket.resource_address() == self.token_vault.resource_address(), "input token invalid");
+          self.total_supply -= amount;
           bucket.take(amount).burn();
         }
 
-        pub fn get_data(&self) -> (u16, Decimal) {
+        pub fn get_data(&self) -> (u16, Decimal, Decimal) {
             let amount = self.token_vault.amount();
-            info!("Current version: {}, vault_amount: {}", self.version, amount);
-            (self.version, amount)
+            info!("Current version: {}, vault_amount: {}, total_supply:{}", self.version, amount, self.total_supply );
+            (self.version, amount, self.total_supply)
         }
         pub fn set_version(&mut self, new_version: u16) {
             info!("Current version is {}", self.version);
