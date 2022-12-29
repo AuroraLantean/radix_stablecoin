@@ -3,7 +3,7 @@ use scrypto::prelude::*;
 // credit: thanks to Scrypto-Example/regulated-token
 // admin, version, withdraw, mint, burn,
 blueprint! {
-    struct StableCoin {
+    struct StableCoinVault {
         token_vault: Vault,
         auth: Vault,
         total_supply: Decimal,
@@ -11,7 +11,7 @@ blueprint! {
         admin_addr: ResourceAddress,
     }
 
-    impl StableCoin {
+    impl StableCoinVault {
         pub fn new(total_supply: Decimal) -> (ComponentAddress, Bucket, Bucket) {
           info!("StableCoin new(): total_supply = {}", total_supply);
             // top admin
@@ -98,8 +98,8 @@ blueprint! {
           info!("total token amount: {}", self.token_vault.amount());
         }
 
-        //pub fn withdraw_external(&self, amount: Decimal) {
-          //send 3rd party tokens first... why not just send them what they want first??
+        //pub fn withdraw_to_3rd_party(&self, amount: Decimal) {
+          //risky... just send tokens to yourself, then deposit them into the 3rd party package!
         //}
         pub fn withdraw(&mut self, amount: Decimal) -> Bucket {
           info!("withdraw_from_vault");
@@ -108,9 +108,8 @@ blueprint! {
           assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
           self.token_vault.take(amount)
         }
-        pub fn deposit(&mut self, amount: Decimal, mut bucket: Bucket) {
-          assert!(amount <= bucket.amount(), "not enough amount in your bucket");
-          self.token_vault.put(bucket.take(amount))
+        pub fn deposit_to_vault(&mut self, bucket: Bucket) {
+          self.token_vault.put(bucket);
         }
 
         pub fn burn_in_vault(&mut self, amount: Decimal) {
@@ -120,11 +119,10 @@ blueprint! {
           self.total_supply -= amount;
           self.token_vault.take(amount).burn();
         }
-        pub fn burn_in_bucket(&mut self, amount: Decimal, mut bucket: Bucket) {
+        pub fn burn_in_bucket(&mut self, mut bucket: Bucket) {
           info!("burn_in_bucket");
-          assert!(amount > dec!(0), "invalid amount");
-          assert!(bucket.amount() > amount, "invalid amount");
           assert!(bucket.resource_address() == self.token_vault.resource_address(), "input token invalid");
+          let amount = bucket.amount();
           self.total_supply -= amount;
           bucket.take(amount).burn();
         }
