@@ -12,7 +12,7 @@ blueprint! {
     }
 
     impl StableCoinVault {
-        pub fn new(total_supply: Decimal) -> (ComponentAddress, Bucket, Bucket) {
+        pub fn new(total_supply: Decimal, keys: Vec<String>, values: Vec<String>) -> (ComponentAddress, Bucket, Bucket) {
           info!("StableCoin new(): total_supply = {}", total_supply);
             // top admin
             let admin_badge: Bucket = ResourceBuilder::new_fungible()
@@ -42,17 +42,16 @@ blueprint! {
             info!("check2");
             let my_bucket: Bucket = ResourceBuilder::new_fungible()
                 .divisibility(DIVISIBILITY_MAXIMUM)
-                .metadata("name", "USD Tether")
-                .metadata("symbol", "USDT")
-                .metadata("icon_url", "https://token_website.com/icon.ico")
-                .metadata("url", "https://token_website.com")
-                .metadata("creator", "Xman")
-                .metadata(
-                    "version",
-                    "version 1 - Fixed supply, withdraw may be restricted",
-                )
+                .metadata(keys[0].as_str(), values[0].as_str())
+                .metadata(keys[1].as_str(), values[1].as_str())
+                .metadata(keys[2].as_str(), values[2].as_str())
+                .metadata(keys[3].as_str(), values[3].as_str())
+                .metadata(keys[4].as_str(), values[4].as_str())
+                .metadata(keys[5].as_str(),values[5].as_str())
                 .updateable_metadata(token_rule.clone(), token_rule.clone())
+                //.updateable_non_fungible_data(...)
                 //.restrict_withdraw(token_rule.clone(), token_rule.clone())
+                //.restrict_deposit(token_rule.clone(), token_rule.clone())
                 .mintable(token_rule.clone(), token_rule.clone())
                 .burnable(token_rule.clone(), token_rule.clone())
                 .initial_supply(total_supply);
@@ -101,8 +100,8 @@ blueprint! {
         //pub fn withdraw_to_3rd_party(&self, amount: Decimal) {
           //risky... just send tokens to yourself, then deposit them into the 3rd party package!
         //}
-        pub fn withdraw(&mut self, amount: Decimal) -> Bucket {
-          info!("withdraw_from_vault");
+        pub fn withdraw_to_bucket(&mut self, amount: Decimal) -> Bucket {
+          info!("withdraw_to_bucket");
           //check set_withdrawable_vault()
           assert!(amount > dec!(0), "invalid amount");
           assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
@@ -119,12 +118,49 @@ blueprint! {
           self.total_supply -= amount;
           self.token_vault.take(amount).burn();
         }
-        pub fn burn_in_bucket(&mut self, mut bucket: Bucket) {
+        pub fn burn_in_bucket(&mut self, bucket: Bucket)  {
           info!("burn_in_bucket");
           assert!(bucket.resource_address() == self.token_vault.resource_address(), "input token invalid");
           let amount = bucket.amount();
           self.total_supply -= amount;
-          bucket.take(amount).burn();
+          bucket.burn();
+        }
+
+        // name, symbol, icon_url, url, author, stage
+        pub fn update_metadata(&mut self, key: String, value: String) {
+          info!("update_metadata");
+          borrow_resource_manager!(self.token_vault.resource_address()).set_metadata(key.into(), value.into());
+        }//self.auth.authorize(|| {})
+
+        //["name", "symbol", "icon_url", "url", "author", "stage"]
+        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<String>) {
+          let manager: &mut ResourceManager = borrow_resource_manager!(token_addr);
+
+          let mut divisibility: u8 = 255;
+          let mut non_fungible_id_type = NonFungibleIdType::U32;
+          match manager.resource_type() {
+              ResourceType::Fungible{divisibility: div} => {
+                  info!("Fungible resource with divisibility {}", div);
+                  divisibility = div;
+              },
+              ResourceType::NonFungible { id_type: NonFungibleIdType } => {
+                  info!("Non Fungible resource found with id_type: {}", NonFungibleIdType);
+                  non_fungible_id_type = NonFungibleIdType;
+              }
+          }
+          let total_supply = manager.total_supply();
+          info!("Total supply: {}", total_supply);
+
+          let mut values: Vec<String> = vec![];
+          for i in keys_owned {
+            let out = manager.get_metadata(i);
+            if out.is_some() {
+              values.push(out.unwrap());
+            } else {
+              values.push("---".to_owned());
+            }
+          }
+          (divisibility, non_fungible_id_type, total_supply, values)
         }
 
         pub fn get_data(&self) -> (u16, Decimal, Decimal) {

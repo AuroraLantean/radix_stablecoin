@@ -1,5 +1,16 @@
 # Radix Stablecoin Vault
 
+## Description
+
+A Stablecoin vault blueprint that can
+
+- mint tokens to the vault or to the admin badge holder
+- withdraw tokens from the vault to admin bucket
+- deposit tokens from admin bucket into the vault
+- burn tokens inside the vault or from admin bucket
+- get the vault status data: version, token amount, total supply
+- set version to mark future upgrades
+
 ## Installation
 
 The following steps assume working in a Linux environment.
@@ -70,6 +81,8 @@ code --install-extension RadixPublishing.radix-transaction-manifest-support
 ### Install Repository Dependencies
 
 ```bash
+git clone https://github.com/AuroraLantean/radix_stablecoin_vault
+cd radix_stablecoin_vault
 scrypto build
 ```
 
