@@ -63,7 +63,7 @@ fn test_stablecoin() {
     //----------------== mint_to_bucket
     let amount = dec!(1000);
     let badge_amount = dec!(3);
-    invoke_badge_access(
+    invoke_badge_access_decimal(
         &mut test_runner,
         &user1,
         component,
@@ -111,7 +111,7 @@ fn test_stablecoin() {
     //----------------== mint_to_vault
     let amount = dec!(1000);
     let badge_amount = dec!(3);
-    invoke_badge_access(
+    invoke_badge_access_decimal(
         &mut test_runner,
         &user1,
         component,
@@ -130,7 +130,7 @@ fn test_stablecoin() {
     //----------------== withdraw_to_bucket
     let amount = dec!(937);
     let badge_amount = dec!(3);
-    invoke_badge_access(
+    invoke_badge_access_decimal(
         &mut test_runner,
         &user1,
         component,
@@ -179,7 +179,7 @@ fn test_stablecoin() {
     //----------------== burn_in_vault
     let amount = dec!(100);
     let badge_amount = dec!(3);
-    invoke_badge_access(
+    invoke_badge_access_decimal(
         &mut test_runner,
         &user1,
         component,
@@ -231,14 +231,15 @@ fn test_stablecoin() {
         token_addr,
         keys_owned.clone(),
     );
-    let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt.output(1);
+    let data: (u8, NonFungibleIdType, Decimal, Vec<Option<String>>) = txn_receipt.output(1);
     println!("call_function output:{:?}\n", data);
+    let data_values = vec_option_string(data.3);
 
     assert_eq!(data.0, 18);
     assert_eq!(data.1, NonFungibleIdType::U32);
     assert_eq!(data.2, total_supply);
     assert!(
-        do_vecs_match(&data.3, &values_owned),
+        do_vecs_match(&data_values, &values_owned),
         "token metadata do not match"
     );
     println!("all metadata match accordingly");
@@ -246,13 +247,12 @@ fn test_stablecoin() {
     //----------------== update_metadata
     let badge_amount = dec!(3);
     let key = "name".to_owned();
-    let target = token_name;
     let value = "Gold Coin".to_owned();
     update_metadata(
         &mut test_runner,
         &user1,
         component,
-        key,
+        key.clone(),
         value.clone(),
         admin_badge_addr,
         badge_amount,
@@ -269,18 +269,30 @@ fn test_stablecoin() {
         token_addr,
         keys_owned.clone(),
     );
-    let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt.output(1);
+    let data: (u8, NonFungibleIdType, Decimal, Vec<Option<String>>) = txn_receipt.output(1);
     println!("call_function output:{:?}\n", data);
+    let data_values = vec_option_string(data.3);
 
     assert_eq!(data.0, 18);
     assert_eq!(data.1, NonFungibleIdType::U32);
     assert_eq!(data.2, total_supply);
 
-    let (values_owned, _) = find_replace(values_owned, target.to_owned(), value);
+    let (values_owned, _) = find_replace_two_vec(values_owned, &keys_owned, &key, value.clone());
     println!("new values_owned:{:?}", values_owned);
     assert!(
-        do_vecs_match(&data.3, &values_owned),
+        do_vecs_match(&data_values, &values_owned),
         "token metadata do not match"
     );
     println!("all metadata match accordingly");
+
+    //----------------== set_token_stage_three
+    let badge_amount = dec!(3);
+    invoke_badge_access(
+        &mut test_runner,
+        &user1,
+        component,
+        "set_token_stage_three",
+        admin_badge_addr,
+        badge_amount,
+    );
 }

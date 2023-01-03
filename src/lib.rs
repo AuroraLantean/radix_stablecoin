@@ -132,8 +132,28 @@ blueprint! {
           borrow_resource_manager!(self.token_vault.resource_address()).set_metadata(key.into(), value.into());
         }//self.auth.authorize(|| {})
 
+        pub fn set_token_stage_three(&self) {
+          info!("set_token_stage_three");
+          let token_rmgr: &mut ResourceManager =
+          borrow_resource_manager!(self.token_vault.resource_address());
+
+          token_rmgr.set_metadata("stage".into(), "Lock mint, withdraw, and update_metadata rules".into());
+          //token_rmgr.set_withdrawable(rule!(allow_all));
+          //token_rmgr.lock_withdrawable();
+
+          token_rmgr.set_mintable(rule!(deny_all));
+          token_rmgr.lock_mintable();
+
+          token_rmgr.set_updateable_metadata(rule!(deny_all));
+          token_rmgr.lock_updateable_metadata();
+
+          // With the resource behavior forever locked, our auth no longer has any use
+          // We will burn our auth badge, and the holders of the other badges may burn them at will
+          // Our badge has the allows everybody to burn, so there's no need to provide a burning authority
+        }
+
         //["name", "symbol", "icon_url", "url", "author", "stage"]
-        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<String>) {
+        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<Option<String>>) {
           let manager: &mut ResourceManager = borrow_resource_manager!(token_addr);
 
           let mut divisibility: u8 = 255;
@@ -151,14 +171,9 @@ blueprint! {
           let total_supply = manager.total_supply();
           info!("Total supply: {}", total_supply);
 
-          let mut values: Vec<String> = vec![];
+          let mut values: Vec<Option<String>> = vec![];
           for i in keys_owned {
-            let out = manager.get_metadata(i);
-            if out.is_some() {
-              values.push(out.unwrap());
-            } else {
-              values.push("---".to_owned());
-            }
+            values.push(manager.get_metadata(i));
           }
           (divisibility, non_fungible_id_type, total_supply, values)
         }
@@ -190,7 +205,7 @@ blueprint! {
 
         /// Either the general admin or withdraw badge may be used to seal withdrawing tokens from the vault
         pub fn set_withdrawable_vault(&self, is_withdrawable: bool) {
-            // this function will fail if version >= 3 and the token behavior has been locked
+            // this function will fail if stage >= 3 and the token behavior has been locked
             let token_rmgr: &mut ResourceManager =
                 borrow_resource_manager!(self.token_vault.resource_address());
 
@@ -221,7 +236,7 @@ blueprint! {
             if self.version == 1 {
               info!("check11");
               self.version = 2;
-                token_rmgr.set_metadata("version".into(), "version 2 - Unlimited supply, may be restricted withdraw".into());
+                token_rmgr.set_metadata("stage".into(), "stage 2 - Unlimited supply, may be restricted withdraw".into());
                 // set token minting to only auth
                 token_rmgr
                     .set_mintable(rule!(require(self.auth.resource_address())));
@@ -234,23 +249,6 @@ blueprint! {
                 self.version = 3;
                 info!("check21");
                 // Update token's metadata to reflect the final version
-                token_rmgr.set_metadata("version".into(), "version 3 - fixed supply".into());
-
-                info!("check22");
-                // Removing restricted withdraw and minting
-                //token_rmgr.set_mintable(rule!(deny_all));
-                token_rmgr.set_withdrawable(rule!(allow_all));
-                token_rmgr.set_updateable_metadata(rule!(deny_all));
-
-                info!("check23");
-                // Permanently fix the token behavior
-                token_rmgr.lock_mintable();
-                token_rmgr.lock_withdrawable();
-                token_rmgr.lock_updateable_metadata();
-
-                // With the resource behavior forever locked, our auth no longer has any use
-                // We will burn our auth badge, and the holders of the other badges may burn them at will
-                // Our badge has the allows everybody to burn, so there's no need to provide a burning authority
 
                 // Drop the last added proof to the component auth zone
                 info!("check24");

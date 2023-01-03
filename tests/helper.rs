@@ -167,7 +167,7 @@ pub fn invoke(
 }
 
 #[allow(unused)]
-pub fn invoke_badge_access(
+pub fn invoke_badge_access_decimal(
     test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
     user: &User,
     component: ComponentAddress,
@@ -179,6 +179,33 @@ pub fn invoke_badge_access(
     let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
         .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
         .call_method(component, func_name, args!(amount))
+        .call_method(
+            user.compo_addr,
+            "deposit_batch",
+            args!(Expression::entire_worktop()),
+        )
+        .build();
+    let receipt = test_runner.execute_manifest_ignoring_fee(
+        manifest,
+        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+    );
+    println!("{} receipt: {:?}\n", func_name, receipt);
+    receipt.expect_commit_success();
+    println!("{} ends successfully", func_name);
+}
+
+#[allow(unused)]
+pub fn invoke_badge_access(
+    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    user: &User,
+    component: ComponentAddress,
+    func_name: &str,
+    badge_addr: ResourceAddress,
+    badge_amount: Decimal,
+) {
+    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
+        .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
+        .call_method(component, func_name, args!())
         .call_method(
             user.compo_addr,
             "deposit_batch",
@@ -263,6 +290,18 @@ pub fn convert_str_slices(str_vec: Vec<&str>) -> Vec<String> {
     }
     owned_strings
 }
+#[allow(unused)]
+pub fn vec_option_string(option_vec: Vec<Option<String>>) -> Vec<String> {
+    let mut owned_strings: Vec<String> = vec![];
+    for e in option_vec {
+        if e.is_some() {
+            owned_strings.push(e.unwrap());
+        } else {
+            owned_strings.push("---".to_owned());
+        }
+    }
+    owned_strings
+}
 
 //floats and NaNs won't compare! use a tolerance for comparing the other values.
 #[allow(unused)]
@@ -272,8 +311,20 @@ pub fn do_vecs_match<T: PartialEq>(a: &Vec<T>, b: &Vec<T>) -> bool {
 }
 
 #[allow(unused)]
-pub fn find_replace<T: PartialEq>(mut v: Vec<T>, target: T, value: T) -> (Vec<T>, T) {
-    let index = v.iter().position(|r| *r == target).unwrap();
+pub fn find_replace<T: PartialEq>(mut v: Vec<T>, key: &T, value: T) -> (Vec<T>, T) {
+    let index = v.iter().position(|r| *r == *key).unwrap();
+    let replaced = std::mem::replace(&mut v[index], value);
+    (v, replaced)
+}
+
+#[allow(unused)]
+pub fn find_replace_two_vec<T: PartialEq>(
+    mut v: Vec<T>,
+    keys: &Vec<T>,
+    key: &T,
+    value: T,
+) -> (Vec<T>, T) {
+    let index = keys.iter().position(|r| *r == *key).unwrap();
     let replaced = std::mem::replace(&mut v[index], value);
     (v, replaced)
 }
