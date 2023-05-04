@@ -1,8 +1,8 @@
 use scrypto::prelude::*;
-
 // credit: thanks to Scrypto-Example/regulated-token
 // admin, version, withdraw, mint, burn,
-blueprint! {
+#[blueprint]
+mod stable_coin_vault {
     struct StableCoinVault {
         token_vault: Vault,
         auth: Vault,
@@ -19,20 +19,20 @@ blueprint! {
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata("name", "admin_badge")
                 .burnable(rule!(allow_all), LOCKED)
-                .initial_supply(3);
+                .mint_initial_supply(3);
             // to withdraw coins
             let wd_badge: Bucket = ResourceBuilder::new_fungible()
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata("name", "withdraw badge")
                 .burnable(rule!(allow_all), LOCKED)
-                .initial_supply(2);
+                .mint_initial_supply(2);
 
             // for minting & withdraw authority
             let auth_badge: Bucket = ResourceBuilder::new_fungible()
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata("name", "auth_badge")
                 .burnable(rule!(allow_all), LOCKED)
-                .initial_supply(1);
+                .mint_initial_supply(1);
             info!("check1");
 
             let token_rule: AccessRule = rule!(
@@ -54,10 +54,10 @@ blueprint! {
                 //.restrict_deposit(token_rule.clone(), token_rule.clone())
                 .mintable(token_rule.clone(), token_rule.clone())
                 .burnable(token_rule.clone(), token_rule.clone())
-                .initial_supply(total_supply);
+                .mint_initial_supply(total_supply);
             info!("check3");
             // Next we need to setup the access rules for the methods of the component
-            let method_rule: AccessRules = AccessRules::new()
+            let method_rule = AccessRulesConfig::new()
                 .method(
                     "get_data",
                     rule!(allow_all), AccessRule::DenyAll
@@ -72,9 +72,9 @@ blueprint! {
                 admin_addr: admin_badge.resource_address(),
             }
             .instantiate();
-            component.add_access_check(method_rule);
+            
             info!("check5");
-            (component.globalize(), admin_badge, wd_badge)
+            (component.globalize_with_access_rules(method_rule), admin_badge, wd_badge)
         }// new()
 
         pub fn mint_to_bucket(&mut self, amount: Decimal) -> Bucket {
@@ -129,15 +129,15 @@ blueprint! {
         // name, symbol, icon_url, url, author, stage
         pub fn update_metadata(&mut self, key: String, value: String) {
           info!("update_metadata");
-          borrow_resource_manager!(self.token_vault.resource_address()).set_metadata(key.into(), value.into());
+          borrow_resource_manager!(self.token_vault.resource_address()).metadata().set(key, value);
         }//self.auth.authorize(|| {})
 
         pub fn set_token_stage_three(&self) {
           info!("set_token_stage_three");
-          let token_rmgr: &mut ResourceManager =
+          let token_rmgr: ResourceManager =
           borrow_resource_manager!(self.token_vault.resource_address());
 
-          token_rmgr.set_metadata("stage".into(), "Lock mint, withdraw, and update_metadata rules".into());
+          token_rmgr.metadata().set("stage".to_owned(), "Lock mint, withdraw, and update_metadata rules".to_owned());
           //token_rmgr.set_withdrawable(rule!(allow_all));
           //token_rmgr.lock_withdrawable();
 
@@ -153,32 +153,33 @@ blueprint! {
         }
 
         //["name", "symbol", "icon_url", "url", "author", "stage"]
-        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<Option<String>>) {
-          let manager: &mut ResourceManager = borrow_resource_manager!(token_addr);
+        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<String>) {
+          let manager: ResourceManager = borrow_resource_manager!(token_addr);
 
           let mut divisibility: u8 = 255;
-          let mut non_fungible_id_type = NonFungibleIdType::U32;
+          let mut non_fungible_id_type = NonFungibleIdType::Integer;
           match manager.resource_type() {
               ResourceType::Fungible{divisibility: div} => {
                   info!("Fungible resource with divisibility {}", div);
                   divisibility = div;
               },
-              ResourceType::NonFungible { id_type: NonFungibleIdType } => {
-                  info!("Non Fungible resource found with id_type: {}", NonFungibleIdType);
-                  non_fungible_id_type = NonFungibleIdType;
+              ResourceType::NonFungible { id_type: nft_id_type } => {
+                  info!("Non Fungible resource found with id_type: {:?}", nft_id_type);
+                  non_fungible_id_type = nft_id_type;
               }
           }
           let total_supply = manager.total_supply();
           info!("Total supply: {}", total_supply);
 
-          let mut values: Vec<Option<String>> = vec![];
-          for i in keys_owned {
-            values.push(manager.get_metadata(i));
+          let mut values: Vec<String> = vec![];
+          for key in keys_owned {
+            let y = manager.metadata().get_string(key).map_or("no_value".to_owned(), |v| v);
+            values.push(y);
           }
           (divisibility, non_fungible_id_type, total_supply, values)
         }
 
-        pub fn get_data(&self) -> (u16, Decimal, Decimal) {
+        pub fn get_vault_data(&self) -> (u16, Decimal, Decimal) {
             let amount = self.token_vault.amount();
             info!("Current version: {}, vault_amount: {}, total_supply:{}", self.version, amount, self.total_supply );
             (self.version, amount, self.total_supply)

@@ -1,11 +1,7 @@
-use radix_engine::ledger::*;
-use radix_engine::transaction::TransactionReceipt;
-use radix_engine_interface::core::NetworkDefinition;
-use radix_engine_interface::model::FromPublicKey;
+use radix_engine::transaction::{TransactionReceipt, TransactionResult};
 use scrypto::prelude::*;
 use scrypto_unit::*;
-use transaction::builder::ManifestBuilder;
-use transaction::signing::EcdsaSecp256k1PrivateKey;
+use transaction::{builder::ManifestBuilder, ecdsa_secp256k1::EcdsaSecp256k1PrivateKey};
 
 pub struct User {
     pub public_key: EcdsaSecp256k1PublicKey,
@@ -14,14 +10,14 @@ pub struct User {
 }
 
 #[allow(unused)]
-pub fn make_users(test_runner: &mut TestRunner<TypedInMemorySubstateStore>) -> (User, User, User) {
+pub fn make_users(test_runner: &mut TestRunner) -> (User, User, User) {
     let user1 = make_one_user(test_runner);
     let user2 = make_one_user(test_runner);
     let user3 = make_one_user(test_runner);
     (user1, user2, user3)
 }
 #[allow(unused)]
-pub fn make_one_user(test_runner: &mut TestRunner<TypedInMemorySubstateStore>) -> User {
+pub fn make_one_user(test_runner: &mut TestRunner) -> User {
     let (public_key, private_key, compo_addr) = test_runner.new_allocated_account();
     User {
         public_key,
@@ -29,12 +25,14 @@ pub fn make_one_user(test_runner: &mut TestRunner<TypedInMemorySubstateStore>) -
         compo_addr,
     }
 }
-
+pub fn get_nft_gid(pk: &EcdsaSecp256k1PublicKey) -> NonFungibleGlobalId {
+  NonFungibleGlobalId::from_public_key(pk)
+}
 #[allow(unused)]
 pub fn deploy_blueprint(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     blueprint_name: &str,
-    init_func_name: &str,
+    func_name: &str,
     decimal1: Decimal,
     keys_owned: Vec<String>,
     values_owned: Vec<String>,
@@ -42,80 +40,83 @@ pub fn deploy_blueprint(
 ) -> (Vec<ResourceAddress>, PackageAddress, ComponentAddress) {
     println!("--------== deploy_blueprint");
     let package_addr = test_runner.compile_and_publish(this_package!());
+
     //publish_package_with_owner
     println!("check1");
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
+    let manifest = ManifestBuilder::new()
         .call_function(
             package_addr,
             blueprint_name,
-            init_func_name,
-            args!(decimal1, keys_owned, values_owned),
+            func_name,
+            manifest_args!(decimal1, keys_owned, values_owned),
         )
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     println!("check2");
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
-    println!("{}() receipt: {:?}\n", init_func_name, receipt);
 
     receipt.expect_commit_success();
-    let component = receipt
-        .expect_commit()
-        .entity_changes
-        .new_component_addresses[0];
-    println!("{}() receipt success", init_func_name);
-    let resources = receipt.new_resource_addresses();
-    ((*resources).clone(), package_addr, component)
+
+    let compo_addr = receipt
+        .expect_commit(true)
+        .new_component_addresses()[0];
+
+    println!("{}() receipt: {:?}\n", func_name, receipt);
+    let resources = receipt.expect_commit(true).new_resource_addresses();
+
+    ((*resources).clone(), package_addr, compo_addr)
 }
 
 #[allow(unused)]
 pub fn user_balance(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
     resource_addr: ResourceAddress,
-) -> Decimal {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .call_method(user.compo_addr, "balance", args!(resource_addr))
+) -> TransactionResult {//-> Decimal
+    let manifest = ManifestBuilder::new()
+        .call_method(user.compo_addr, "balance", manifest_args!(resource_addr))
         .build();
+
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("user_balance receipt:{:?}\n", receipt);
     receipt.expect_commit_success();
-    receipt.output(1)
+    receipt.result
 }
 
 #[allow(unused)]
-pub fn get_data(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+pub fn get_vault_data(
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
-) -> (u16, Decimal, Decimal) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .call_method(component, "get_data", args!())
+    compo_addr: ComponentAddress,
+)  {//-> (u16, Decimal, Decimal)
+    let manifest = ManifestBuilder::new()
+        .call_method(compo_addr, "get_vault_data", manifest_args!())
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
-    println!("get_data receipt:{:?}\n", receipt);
+    println!("get_vault_data() receipt:{:?}\n", receipt);
     receipt.expect_commit_success();
-    println!("get_data receipt success");
+    //println!("get_vault_data receipt success");
     let data: (u16, Decimal, Decimal) = receipt.output(1);
-    println!("data:{:?}\n", data);
-    data
+    //println!("data:{:?}\n", data);
+    //data
 }
 
 #[allow(unused)]
 pub fn call_function(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
     package_address: PackageAddress,
     blueprint_name: &str,
@@ -123,17 +124,17 @@ pub fn call_function(
     token_addr: ResourceAddress,
     keys_owned: Vec<String>,
 ) -> TransactionReceipt {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
+    let manifest = ManifestBuilder::new()
         .call_function(
             package_address,
             blueprint_name,
             function_name,
-            args!(token_addr, keys_owned),
+            manifest_args!(token_addr, keys_owned),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt:{:?}\n", function_name, receipt);
     receipt.expect_commit_success();
@@ -143,23 +144,23 @@ pub fn call_function(
 
 #[allow(unused)]
 pub fn invoke(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     func_name: &str,
     amount: Decimal,
 ) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .call_method(component, func_name, args!(amount))
+    let manifest = ManifestBuilder::new()
+        .call_method(compo_addr, func_name, manifest_args!(amount))
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
@@ -168,26 +169,26 @@ pub fn invoke(
 
 #[allow(unused)]
 pub fn invoke_badge_access_decimal(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     func_name: &str,
     amount: Decimal,
     badge_addr: ResourceAddress,
     badge_amount: Decimal,
 ) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
-        .call_method(component, func_name, args!(amount))
+    let manifest = ManifestBuilder::new()
+        .create_proof_from_account_by_amount(user.compo_addr, badge_addr, badge_amount)
+        .call_method(compo_addr, func_name, manifest_args!(amount))
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
@@ -196,25 +197,25 @@ pub fn invoke_badge_access_decimal(
 
 #[allow(unused)]
 pub fn invoke_badge_access(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     func_name: &str,
     badge_addr: ResourceAddress,
     badge_amount: Decimal,
 ) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
-        .call_method(component, func_name, args!())
+    let manifest = ManifestBuilder::new()
+        .create_proof_from_account_by_amount(user.compo_addr, badge_addr, badge_amount)
+        .call_method(compo_addr, func_name, manifest_args!())
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
@@ -223,30 +224,30 @@ pub fn invoke_badge_access(
 
 #[allow(unused)]
 pub fn invoke_badge_access_with_bucket(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     func_name: &str,
     amount: Decimal,
     token_addr: ResourceAddress,
     badge_addr: ResourceAddress,
     badge_amount: Decimal,
 ) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
-        .withdraw_from_account_by_amount(user.compo_addr, amount, token_addr)
-        .take_from_worktop_by_amount(amount, token_addr, |builder, bucket_id| {
-            builder.call_method(component, func_name, args!(Bucket(bucket_id)))
+    let manifest = ManifestBuilder::new()
+        .create_proof_from_account_by_amount(user.compo_addr, badge_addr, badge_amount )
+        .withdraw_from_account(user.compo_addr, token_addr, amount)
+        .take_from_worktop_by_amount(amount, token_addr, |builder, bucket| {
+            builder.call_method(compo_addr, func_name, manifest_args!(bucket))
         })
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
@@ -255,27 +256,27 @@ pub fn invoke_badge_access_with_bucket(
 
 #[allow(unused)]
 pub fn update_metadata(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     key: String,
     value: String,
     badge_addr: ResourceAddress,
     badge_amount: Decimal,
 ) {
     let func_name = "update_metadata";
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .create_proof_from_account_by_amount(user.compo_addr, badge_amount, badge_addr)
-        .call_method(component, func_name, args!(key, value))
+    let manifest = ManifestBuilder::new()
+        .create_proof_from_account_by_amount(user.compo_addr, badge_addr, badge_amount)
+        .call_method(compo_addr, func_name, manifest_args!(key, value))
         .call_method(
             user.compo_addr,
             "deposit_batch",
-            args!(Expression::entire_worktop()),
+            manifest_args!(ManifestExpression::EntireWorktop),
         )
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user.public_key)],
+        vec![get_nft_gid(&user.public_key)],
     );
     println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
@@ -331,22 +332,22 @@ pub fn find_replace_two_vec<T: PartialEq>(
 
 #[allow(unused)]
 pub fn send_tokens(
-    test_runner: &mut TestRunner<TypedInMemorySubstateStore>,
+    test_runner: &mut TestRunner,
     user_from: &User,
     user_to: &User,
-    component: ComponentAddress,
+    compo_addr: ComponentAddress,
     amount: Decimal,
     token_addr: ResourceAddress,
 ) {
-    let manifest = ManifestBuilder::new(&NetworkDefinition::simulator())
-        .withdraw_from_account_by_amount(user_from.compo_addr, amount, token_addr)
-        .take_from_worktop_by_amount(amount, token_addr, |builder, bucket_id| {
-            builder.call_method(user_to.compo_addr, "deposit", args!(Bucket(bucket_id)))
+    let manifest = ManifestBuilder::new()
+        .withdraw_from_account(user_from.compo_addr,  token_addr, amount)
+        .take_from_worktop_by_amount(amount, token_addr, |builder, bucket| {
+            builder.call_method(user_to.compo_addr, "deposit", manifest_args!(bucket))
         })
         .build();
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![NonFungibleAddress::from_public_key(&user_from.public_key)],
+        vec![get_nft_gid(&user_from.public_key)],
     );
     println!("send_token receipt: {:?}\n", receipt);
     receipt.expect_commit_success();
