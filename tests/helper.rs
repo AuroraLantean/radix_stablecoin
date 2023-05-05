@@ -1,4 +1,4 @@
-use radix_engine::transaction::{TransactionReceipt, TransactionResult};
+use radix_engine::transaction::{TransactionReceipt};
 use scrypto::prelude::*;
 use scrypto_unit::*;
 use transaction::{builder::ManifestBuilder, ecdsa_secp256k1::EcdsaSecp256k1PrivateKey};
@@ -33,7 +33,7 @@ pub fn deploy_blueprint(
     test_runner: &mut TestRunner,
     blueprint_name: &str,
     func_name: &str,
-    decimal1: Decimal,
+    total_supply: Decimal,
     keys_owned: Vec<String>,
     values_owned: Vec<String>,
     user: &User,
@@ -48,7 +48,7 @@ pub fn deploy_blueprint(
             package_addr,
             blueprint_name,
             func_name,
-            manifest_args!(decimal1, keys_owned, values_owned),
+            manifest_args!(total_supply, keys_owned, values_owned),
         )
         .call_method(
             user.compo_addr,
@@ -63,34 +63,50 @@ pub fn deploy_blueprint(
     );
 
     receipt.expect_commit_success();
+    println!("{} receipt success", func_name);
 
     let compo_addr = receipt
         .expect_commit(true)
         .new_component_addresses()[0];
 
-    println!("{}() receipt: {:?}\n", func_name, receipt);
+    //println!("{}() receipt: {:?}\n", func_name, receipt);
     let resources = receipt.expect_commit(true).new_resource_addresses();
+    println!("{} ends successfully", func_name);
 
     ((*resources).clone(), package_addr, compo_addr)
 }
 
 #[allow(unused)]
-pub fn user_balance(
+pub fn get_user_balc(
     test_runner: &mut TestRunner,
     user: &User,
     resource_addr: ResourceAddress,
-) -> TransactionResult {//-> Decimal
-    let manifest = ManifestBuilder::new()
-        .call_method(user.compo_addr, "balance", manifest_args!(resource_addr))
-        .build();
+    resource_name: &str,
+) -> Decimal {
+    let balance: Option<Decimal> = test_runner.account_balance(user.compo_addr, resource_addr);
+    println!(
+    "{} balance:{:?}", resource_name, balance);
 
-    let receipt = test_runner.execute_manifest_ignoring_fee(
-        manifest,
-        vec![get_nft_gid(&user.public_key)],
-    );
-    println!("user_balance receipt:{:?}\n", receipt);
-    receipt.expect_commit_success();
-    receipt.result
+    balance.map_or(dec!(0), |v| v)
+}
+#[allow(unused)]
+pub fn get_vault_balc(
+    test_runner: &mut TestRunner,
+    compo_addr: ComponentAddress,
+    resource_addr: ResourceAddress,
+    resource_name: &str,
+) -> Vec<Decimal> {
+    println!("get_vault_balc for {} @ {:?}", resource_name, resource_addr);
+    let vault_ids = test_runner.get_component_vaults(compo_addr, resource_addr);
+    println!("vault_ids: {:?}", vault_ids);
+
+    let balcs: Vec<Decimal> = vault_ids.iter().map(|vault_id|{
+      let balc: Option<Decimal> = test_runner.inspect_vault_balance(*vault_id);
+      println!(
+      "balance of vault_id {:?}:{:?}", vault_id, balc);
+      balc.map_or(dec!(0), |v| v)
+    }).collect();
+    balcs
 }
 
 #[allow(unused)]
@@ -98,20 +114,24 @@ pub fn get_vault_data(
     test_runner: &mut TestRunner,
     user: &User,
     compo_addr: ComponentAddress,
-)  {//-> (u16, Decimal, Decimal)
+) -> (u16, Decimal, Decimal) {
+    println!("--------== get_vault_data");
     let manifest = ManifestBuilder::new()
         .call_method(compo_addr, "get_vault_data", manifest_args!())
         .build();
+    println!("check1");
     let receipt = test_runner.execute_manifest_ignoring_fee(
         manifest,
-        vec![get_nft_gid(&user.public_key)],
-    );
-    println!("get_vault_data() receipt:{:?}\n", receipt);
-    receipt.expect_commit_success();
-    //println!("get_vault_data receipt success");
-    let data: (u16, Decimal, Decimal) = receipt.output(1);
-    //println!("data:{:?}\n", data);
-    //data
+        vec![],
+    );//get_nft_gid(&user.public_key)
+    println!("check2");
+    //receipt.expect_commit_success();
+
+    //println!("get_vault_data() receipt:{:?}\n", receipt);
+    let data: (u16, Decimal, Decimal) = receipt.expect_commit(true).output(1);
+    //let data: (u16, Decimal, Decimal) = receipt.expect_commit_success().output(1);
+    println!("data:{:?}\n", data);
+    data
 }
 
 #[allow(unused)]
@@ -120,7 +140,7 @@ pub fn call_function(
     user: &User,
     package_address: PackageAddress,
     blueprint_name: &str,
-    function_name: &str,
+    func_name: &str,
     token_addr: ResourceAddress,
     keys_owned: Vec<String>,
 ) -> TransactionReceipt {
@@ -128,7 +148,7 @@ pub fn call_function(
         .call_function(
             package_address,
             blueprint_name,
-            function_name,
+            func_name,
             manifest_args!(token_addr, keys_owned),
         )
         .build();
@@ -136,9 +156,9 @@ pub fn call_function(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt:{:?}\n", function_name, receipt);
+    //println!("{} receipt:{:?}\n", func_name, receipt);
     receipt.expect_commit_success();
-    println!("{} receipt success", function_name);
+    println!("{} receipt success", func_name);
     receipt
 }
 
@@ -162,7 +182,7 @@ pub fn invoke(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt: {:?}\n", func_name, receipt);
+    //println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
     println!("{} ends successfully", func_name);
 }
@@ -190,7 +210,7 @@ pub fn invoke_badge_access_decimal(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt: {:?}\n", func_name, receipt);
+    //println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
     println!("{} ends successfully", func_name);
 }
@@ -217,7 +237,7 @@ pub fn invoke_badge_access(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt: {:?}\n", func_name, receipt);
+    //println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
     println!("{} ends successfully", func_name);
 }
@@ -249,7 +269,7 @@ pub fn invoke_badge_access_with_bucket(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt: {:?}\n", func_name, receipt);
+    //println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
     println!("{} ends successfully", func_name);
 }
@@ -278,7 +298,7 @@ pub fn update_metadata(
         manifest,
         vec![get_nft_gid(&user.public_key)],
     );
-    println!("{} receipt: {:?}\n", func_name, receipt);
+    //println!("{} receipt: {:?}\n", func_name, receipt);
     receipt.expect_commit_success();
     println!("{} ends successfully", func_name);
 }

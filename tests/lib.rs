@@ -12,6 +12,10 @@ fn test_stablecoin() {
     let (user1, user2, user3) = make_users(&mut test_runner);
 
     let total_supply_original = dec!(1000000);
+    let mut u1token_exp = dec!(0);
+    let mut u2token_exp = dec!(0);
+    let mut v1token_exp = total_supply_original;
+
     let keys_str = vec!["name", "symbol", "icon_url", "url", "author", "stage"];
     let keys_owned = convert_str_slices(keys_str);
     let blueprint_name = "StableCoinVault";
@@ -42,29 +46,39 @@ fn test_stablecoin() {
     assert_eq!(resources.len(), 4);
 
     let admin_badge_addr = resources[0];
+    let wd_badge_addr = resources[1];
+    let auth_badge_addr = resources[2];
     let token_addr = resources[3];
 
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    //assert_eq!(data.2, total_supply);
+    let u1admin_badge = get_user_balc(&mut test_runner, &user1, admin_badge_addr, "u1admin_badge");
 
-/*
+    let u1wd_badge = get_user_balc(&mut test_runner, &user1, wd_badge_addr, "u1wd_badge");
+    let u1auth_badge = get_user_balc(&mut test_runner, &user1, auth_badge_addr, "u1auth_badge");
 
-    let admin_badge_balance = user_balance(&mut test_runner, &user1, admin_badge_addr);
-    let wd_badge_balance = user_balance(&mut test_runner, &user1, resources[1]);
-    let auth_badge_balance = user_balance(&mut test_runner, &user1, resources[2]);
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    println!(
-        "admin_badge_balance:{}, wd_badge_balance:{}, auth_badge_balance:{}, u1token_bal:{}",
-        admin_badge_balance, wd_badge_balance, auth_badge_balance, u1token_bal
-    );
-    assert_eq!(admin_badge_balance, dec!(3));
-    assert_eq!(wd_badge_balance, dec!(2));
-    assert_eq!(auth_badge_balance, dec!(0));
-    assert_eq!(u1token_bal, dec!(0));
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
+
+    let u2token = get_user_balc(&mut test_runner, &user2, token_addr, "u2token");
+
+    assert_eq!(u1admin_badge, dec!(3));
+    assert_eq!(u1wd_badge, dec!(2));
+    assert_eq!(u1auth_badge, dec!(0));
+    assert_eq!(u1token, u1token);
+    assert_eq!(u2token, u2token);
+
+    println!("-----------------== check vault balances");
+    let v1auth_badge = get_vault_balc(&mut test_runner, compo_addr, auth_badge_addr, "v1auth_badge");
+    assert_eq!(v1auth_badge[0], dec!(1));
+
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], v1token_exp);
 
     //----------------== get_vault_data
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    assert_eq!(data.0, 1);
+    assert_eq!(data.2, total_supply_original);
+*/
 
-    //----------------== mint_to_bucket
+    println!("-----------------== mint_to_bucket");
     let amount = dec!(1000);
     let badge_amount = dec!(3);
     invoke_badge_access_decimal(
@@ -76,25 +90,23 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
     assert_eq!(data.2, total_supply + amount);
     total_supply += amount;
-    assert_eq!(data.1, total_supply_original);
-    let mut _vault_amount = data.1;
     println!("total supply increased accordingly");
-
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    //println!("u1token_bal:{}", u1token_bal);
-    //assert_eq!(u1token_bal, amount);
+*/
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
+    assert_eq!(u1token, amount);
+    u1token_exp = u1token;
     println!("user token balance increased accordingly");
-    let mut _u1token_bal_t = u1token_bal;
 
-    //----------------== acct2
-    let mut _u2token_bal_t = dec!(0);
-    //let u2token_bal = user_balance(&mut test_runner, &user2, token_addr);
-    //assert_eq!(u2token_bal, _u2token_bal_t);
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], total_supply_original);
+    v1token_exp = total_supply_original;
+    println!("vault token balance stays the same");
 
-    //----------------== Transfering acct1 to acct2
+
+    println!("-----------------== Sending user1 to user2");
     let amount = dec!(123);
     send_tokens(
         &mut test_runner,
@@ -104,15 +116,16 @@ fn test_stablecoin() {
         amount,
         token_addr,
     );
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    //assert_eq!(u1token_bal, _u1token_bal_t - amount);
-    //_u1token_bal_t -= amount;
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr,"u1token");
+    assert_eq!(u1token, u1token_exp - amount);
+    u1token_exp = u1token;
 
-    let u2token_bal = user_balance(&mut test_runner, &user2, token_addr);
-    //assert_eq!(u2token_bal, _u2token_bal_t + amount);
-    _u2token_bal_t += amount;
+    let u2token = get_user_balc(&mut test_runner, &user2, token_addr, "u2token");
+    assert_eq!(u2token, u2token_exp + amount);
+    u2token_exp = u2token;
+    println!("Successfully sending tokens from user1 to user2");
 
-    //----------------== mint_to_vault
+    println!("-----------------== mint_to_vault");
     let amount = dec!(1000);
     let badge_amount = dec!(3);
     invoke_badge_access_decimal(
@@ -124,14 +137,17 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply + amount);
-    total_supply += amount;
-    assert_eq!(data.1, total_supply_original + amount);
-    _vault_amount = total_supply_original + amount;
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], v1token_exp + amount);
+    v1token_exp = v1token[0];
     println!("vault amount increased accordingly");
 
-    //----------------== withdraw_to_bucket
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    assert_eq!(data.2, total_supply + amount);
+    total_supply += amount;
+*/
+
+    println!("-----------------== withdraw_to_bucket");
     let amount = dec!(937);
     let badge_amount = dec!(3);
     invoke_badge_access_decimal(
@@ -143,19 +159,20 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply);
-    assert_eq!(data.1, _vault_amount - amount);
-    _vault_amount -= amount;
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], v1token_exp - amount);
+    v1token_exp = v1token[0];
     println!("vault amount decreased accordingly");
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    assert_eq!(data.2, total_supply);
+*/
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
+    assert_eq!(u1token, u1token_exp + amount);
+    u1token_exp = u1token;
+    println!("u1token increased accordingly");
 
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    //println!("u1token_bal:{}", u1token_bal);
-    //assert_eq!(u1token_bal, _u1token_bal_t + amount);
-    //_u1token_bal_t += amount;
-    println!("u1token_bal increased accordingly");
 
-    //----------------== deposit
+    println!("-----------------== deposit");
     let amount = dec!(37);
     let badge_amount = dec!(3);
     invoke_badge_access_with_bucket(
@@ -168,19 +185,20 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply);
-    assert_eq!(data.1, _vault_amount + amount);
-    _vault_amount += amount;
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], v1token_exp + amount);
+    v1token_exp = v1token[0];
     println!("vault amount increased accordingly");
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    assert_eq!(data.2, total_supply);
+*/
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
+    assert_eq!(u1token, u1token_exp - amount);
+    u1token_exp = u1token;
+    println!("u1token decreased accordingly");
 
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    //println!("u1token_bal:{}", u1token_bal);
-    //assert_eq!(u1token_bal, _u1token_bal_t - amount);
-    //_u1token_bal_t -= amount;
-    println!("u1token_bal decreased accordingly");
 
-    //----------------== burn_in_vault
+    println!("-----------------== burn_in_vault");
     let amount = dec!(100);
     let badge_amount = dec!(3);
     invoke_badge_access_decimal(
@@ -192,14 +210,16 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
+    assert_eq!(v1token[0], v1token_exp - amount);
+    v1token_exp = v1token[0];
+    println!("vault amount decreased accordingly");
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
     assert_eq!(data.2, total_supply - amount);
     total_supply -= amount;
-    assert_eq!(data.1, _vault_amount - amount);
-    _vault_amount -= amount;
-    println!("vault amount decreased accordingly");
+*/
 
-    //----------------== burn_in_bucket
+    println!("-----------------== burn_in_bucket");
     let amount = dec!(12);
     let badge_amount = dec!(3);
     invoke_badge_access_with_bucket(
@@ -212,19 +232,18 @@ fn test_stablecoin() {
         admin_badge_addr,
         badge_amount,
     );
-    let data = get_vault_data(&mut test_runner, &user1, compo_addr);
+    /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
     assert_eq!(data.2, total_supply - amount);
     total_supply -= amount;
-    assert_eq!(data.1, _vault_amount);
+    assert_eq!(data.1, v1token_exp);
     println!("vault amount decreased accordingly");
-
-    let u1token_bal = user_balance(&mut test_runner, &user1, token_addr);
-    //println!("u1token_bal:{}", u1token_bal);
-    //assert_eq!(u1token_bal, _u1token_bal_t - amount);
-    //_u1token_bal_t -= amount;
-    println!("u1token_bal decreased accordingly");
-
-    //----------------== read_metadata
+*/
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
+    assert_eq!(u1token, u1token_exp - amount);
+    u1token_exp = u1token;
+    println!("u1token decreased accordingly");
+/*
+    println!("-----------------== read_metadata");
     let function_name = "get_token_metadata";
     let txn_receipt = call_function(
         &mut test_runner,
@@ -248,7 +267,7 @@ fn test_stablecoin() {
     );
     println!("all metadata match accordingly");
 */
-    //----------------== update_metadata
+    println!("-----------------== update_metadata");
     let badge_amount = dec!(3);
     let key = "name".to_owned();
     let value = "Gold Coin".to_owned();
@@ -262,7 +281,7 @@ fn test_stablecoin() {
         badge_amount,
     );
 
-    //----------------== read_metadata
+    println!("-----------------== read_metadata");
     let function_name = "get_token_metadata";
     let txn_receipt = call_function(
         &mut test_runner,
@@ -290,7 +309,7 @@ fn test_stablecoin() {
     );
     println!("all metadata match accordingly");
 */
-    //----------------== set_token_stage_three
+    println!("-----------------== set_token_stage_three");
     let badge_amount = dec!(3);
     invoke_badge_access(
         &mut test_runner,

@@ -64,7 +64,7 @@ mod stable_coin_vault {
                 )
                 .default(token_rule, AccessRule::DenyAll);
             info!("check4");
-            let mut component = Self {
+            let component = Self {
                 token_vault: Vault::with_bucket(my_bucket),
                 auth: Vault::with_bucket(auth_badge),
                 total_supply,
