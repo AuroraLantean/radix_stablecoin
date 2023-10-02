@@ -1,187 +1,265 @@
 use scrypto::prelude::*;
 // credit: thanks to Scrypto-Example/regulated-token
 // admin, version, withdraw, mint, burn,
+
+//mod another;// to import "another.rs"
+/* #[derive(ScryptoSbor, NonFungibleData)]
+pub struct RoyaltyShare {
+    pub name: String,
+    #[mutable]
+    pub available: bool,
+    pub account_component: ComponentAddress,
+    pub percentage: Decimal,
+} */
 #[blueprint]
 mod stable_coin_vault {
+    enable_method_auth! {
+        roles {
+            super_admin => updatable_by: [OWNER];
+            admin => updatable_by: [super_admin, OWNER];
+        },
+        methods {
+            free_token => PUBLIC;
+            buy => PUBLIC;
+            change_price => restrict_to: [admin];
+            mint_to_bucket => restrict_to: [admin];
+            mint_to_vault => restrict_to: [admin];
+            withdraw_to_bucket => restrict_to: [admin];
+            deposit_to_vault => PUBLIC;
+            burn_in_vault => restrict_to: [admin];
+            burn_in_bucket => restrict_to: [admin];
+            update_metadata => restrict_to: [admin];
+            set_token_stage_three => restrict_to: [admin];
+            //redeem_profits => restrict_to: [super_admin, OWNER];
+            get_vault_data => PUBLIC;
+            set_version => restrict_to: [super_admin];
+        }
+    }
     struct StableCoinVault {
         token_vault: Vault,
-        auth: Vault,
+        //auth: Vault,
         total_supply: Decimal,
         version: u16,
-        admin_addr: ResourceAddress,
+        //admin_addr: ResourceAddress,
     }
-
     impl StableCoinVault {
-        pub fn new(total_supply: Decimal, keys: Vec<String>, values: Vec<String>) -> (ComponentAddress, Bucket, Bucket) {
-          info!("StableCoin new(): total_supply = {}", total_supply);
-            // top admin
-            let admin_badge: Bucket = ResourceBuilder::new_fungible()
-                .divisibility(DIVISIBILITY_NONE)
-                .metadata("name", "admin_badge")
-                .burnable(rule!(allow_all), LOCKED)
-                .mint_initial_supply(3);
-            // to withdraw coins
-            let wd_badge: Bucket = ResourceBuilder::new_fungible()
-                .divisibility(DIVISIBILITY_NONE)
-                .metadata("name", "withdraw badge")
-                .burnable(rule!(allow_all), LOCKED)
-                .mint_initial_supply(2);
+        pub fn new(
+            total_supply: Decimal,
+            keys: Vec<String>,
+            values: Vec<String>,
+            owner_badge: ResourceAddress,
+        ) -> (Global<StableCoinVault>, Bucket) {
+            info!("StableCoin new(): total_supply = {}", total_supply);
 
-            // for minting & withdraw authority
-            let auth_badge: Bucket = ResourceBuilder::new_fungible()
+            // super_admin
+            let super_admin_badge: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(DIVISIBILITY_NONE)
-                .metadata("name", "auth_badge")
-                .burnable(rule!(allow_all), LOCKED)
+                .metadata(metadata! {
+                  init {
+                      "name" => "super_admin".to_owned(), locked;
+                  }
+                })
                 .mint_initial_supply(1);
-            info!("check1");
 
-            let token_rule: AccessRule = rule!(
-                require(admin_badge.resource_address())
-                    || require(auth_badge.resource_address())
-            );
-            info!("check2");
-            let my_bucket: Bucket = ResourceBuilder::new_fungible()
+            // admin_badge
+            let admin_badge: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
+                .divisibility(DIVISIBILITY_NONE)
+                .metadata(metadata! {
+                  init {
+                      "name" => "admin_badge".to_owned(), locked;
+                  }
+                })
+                .mint_initial_supply(3);
+
+            let my_bucket: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(DIVISIBILITY_MAXIMUM)
-                .metadata(keys[0].as_str(), values[0].as_str())
-                .metadata(keys[1].as_str(), values[1].as_str())
-                .metadata(keys[2].as_str(), values[2].as_str())
-                .metadata(keys[3].as_str(), values[3].as_str())
-                .metadata(keys[4].as_str(), values[4].as_str())
-                .metadata(keys[5].as_str(),values[5].as_str())
-                .updateable_metadata(token_rule.clone(), token_rule.clone())
-                //.updateable_non_fungible_data(...)
-                //.restrict_withdraw(token_rule.clone(), token_rule.clone())
-                //.restrict_deposit(token_rule.clone(), token_rule.clone())
-                .mintable(token_rule.clone(), token_rule.clone())
-                .burnable(token_rule.clone(), token_rule.clone())
+                .metadata(metadata! {
+                    init {
+                      keys[0].as_str() => values[0].as_str(), locked;
+                      keys[1].as_str() => values[1].as_str(), locked;
+                      keys[2].as_str() => values[2].as_str(), locked;
+                      keys[3].as_str() => values[3].as_str(), locked;
+                      keys[4].as_str() => values[4].as_str(), locked;
+                      keys[5].as_str() => values[5].as_str(), locked;
+                    }
+                })
                 .mint_initial_supply(total_supply);
-            info!("check3");
-            // Next we need to setup the access rules for the methods of the component
-            let method_rule = AccessRulesConfig::new()
-                .method(
-                    "get_data",
-                    rule!(allow_all), AccessRule::DenyAll
-                )
-                .default(token_rule, AccessRule::DenyAll);
-            info!("check4");
+
+            info!("check2");
             let component = Self {
-                token_vault: Vault::with_bucket(my_bucket),
-                auth: Vault::with_bucket(auth_badge),
+                token_vault: Vault::with_bucket(my_bucket.into()),
                 total_supply,
                 version: 1,
-                admin_addr: admin_badge.resource_address(),
             }
-            .instantiate();
-            
-            info!("check5");
-            (component.globalize_with_access_rules(method_rule), admin_badge, wd_badge)
-        }// new()
+            .instantiate()
+            .prepare_to_globalize(OwnerRole::Fixed(rule!(require(owner_badge))))
+            .roles(roles!(
+                super_admin => rule!(require(super_admin_badge.resource_address()));
+                admin => rule!(require(admin_badge.resource_address()));
+            ))
+            .globalize();
+            return (component, admin_badge.into());
+        }
+
+        pub fn free_token(&mut self) -> Bucket {
+            info!("balance: {}", self.token_vault.amount());
+            self.token_vault.take(1)
+        }
+        pub fn buy(&mut self, _funds: Bucket) -> Bucket {
+            self.token_vault.take(1)
+        }
+
+        pub fn change_price(&mut self, _new_price: Decimal) {
+            // -- snip --
+        }
 
         pub fn mint_to_bucket(&mut self, amount: Decimal) -> Bucket {
-          info!("mint_to_bucket");
-          assert!(amount > dec!(0), "invalid amount");
-          info!("self.total_supply:{}", self.total_supply);
-          self.total_supply += amount;
-          info!("self.total_supply:{}", self.total_supply);
-          self.auth.authorize(|| {
-            borrow_resource_manager!(self.token_vault.resource_address()).mint(amount)
-          })
+            info!("mint_to_bucket");
+            assert!(amount > dec!(0), "invalid amount");
+            info!("self.total_supply:{}", self.total_supply);
+            self.total_supply += amount;
+            info!("self.total_supply:{}", self.total_supply);
+            //self.auth.authorize(|| {
+            ResourceManager::from_address(self.token_vault.resource_address()).mint(amount)
         }
         pub fn mint_to_vault(&mut self, amount: Decimal) {
-          info!("mint_to_vault");
-          assert!(amount > dec!(0), "invalid amount");
-          let new_tokens = borrow_resource_manager!(self.token_vault.resource_address())
-          .mint(amount);
-          self.token_vault.put(new_tokens);
-          self.total_supply += amount;
-          info!("total token amount: {}", self.token_vault.amount());
+            info!("mint_to_vault");
+            assert!(amount > dec!(0), "invalid amount");
+            let new_tokens =
+                ResourceManager::from_address(self.token_vault.resource_address()).mint(amount);
+            self.token_vault.put(new_tokens);
+            self.total_supply += amount;
+            info!("total token amount: {}", self.token_vault.amount());
         }
 
-        //pub fn withdraw_to_3rd_party(&self, amount: Decimal) {
-          //risky... just send tokens to yourself, then deposit them into the 3rd party package!
-        //}
+        /*pub fn withdraw_to_3rd_party(&self, amount: Decimal) {
+        // risky... just send tokens to yourself, then deposit them into the 3rd party package!
+        }*/
+
         pub fn withdraw_to_bucket(&mut self, amount: Decimal) -> Bucket {
-          info!("withdraw_to_bucket");
-          //check set_withdrawable_vault()
-          assert!(amount > dec!(0), "invalid amount");
-          assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
-          self.token_vault.take(amount)
+            info!("withdraw_to_bucket");
+            //check set_withdrawable_vault()
+            assert!(amount > dec!(0), "invalid amount");
+            assert!(
+                amount <= self.token_vault.amount(),
+                "not enough amount in the vault"
+            );
+            self.token_vault.take(amount)
         }
         pub fn deposit_to_vault(&mut self, bucket: Bucket) {
-          self.token_vault.put(bucket);
+            self.token_vault.put(bucket);
         }
 
         pub fn burn_in_vault(&mut self, amount: Decimal) {
-          info!("burn_in_vault");
-          assert!(amount > dec!(0), "invalid amount");
-          assert!(amount <= self.token_vault.amount(), "not enough amount in the vault");
-          self.total_supply -= amount;
-          self.token_vault.take(amount).burn();
+            info!("burn_in_vault");
+            assert!(amount > dec!(0), "invalid amount");
+            assert!(
+                amount <= self.token_vault.amount(),
+                "not enough amount in the vault"
+            );
+            self.total_supply -= amount;
+            self.token_vault.take(amount).burn();
         }
-        pub fn burn_in_bucket(&mut self, bucket: Bucket)  {
-          info!("burn_in_bucket");
-          assert!(bucket.resource_address() == self.token_vault.resource_address(), "input token invalid");
-          let amount = bucket.amount();
-          self.total_supply -= amount;
-          bucket.burn();
+        pub fn burn_in_bucket(&mut self, bucket: Bucket) {
+            info!("burn_in_bucket");
+            assert!(
+                bucket.resource_address() == self.token_vault.resource_address(),
+                "input token invalid"
+            );
+            let amount = bucket.amount();
+            self.total_supply -= amount;
+            bucket.burn();
         }
 
         // name, symbol, icon_url, url, author, stage
         pub fn update_metadata(&mut self, key: String, value: String) {
-          info!("update_metadata");
-          borrow_resource_manager!(self.token_vault.resource_address()).metadata().set(key, value);
-        }//self.auth.authorize(|| {})
+            info!("update_metadata");
+            ResourceManager::from_address(self.token_vault.resource_address())
+                .set_metadata(key, value);
+        } //self.auth.authorize(|| {})
 
         pub fn set_token_stage_three(&self) {
-          info!("set_token_stage_three");
-          let token_rmgr: ResourceManager =
-          borrow_resource_manager!(self.token_vault.resource_address());
+            info!("set_token_stage_three");
+            let token_rmgr: ResourceManager =
+                ResourceManager::from_address(self.token_vault.resource_address());
 
-          token_rmgr.metadata().set("stage".to_owned(), "Lock mint, withdraw, and update_metadata rules".to_owned());
-          //token_rmgr.set_withdrawable(rule!(allow_all));
-          //token_rmgr.lock_withdrawable();
+            token_rmgr.set_metadata(
+                "stage".to_owned(),
+                "Lock mint, withdraw, and update_metadata rules".to_owned(),
+            );
+            //token_rmgr.set_withdrawable(rule!(allow_all));
+            //token_rmgr.lock_withdrawable();
 
-          token_rmgr.set_mintable(rule!(deny_all));
-          token_rmgr.lock_mintable();
+            token_rmgr.set_mintable(rule!(deny_all));
+            token_rmgr.lock_mintable();
 
-          token_rmgr.set_updateable_metadata(rule!(deny_all));
-          token_rmgr.lock_updateable_metadata();
+            token_rmgr.set_updatable_metadata(rule!(deny_all));
+            token_rmgr.lock_updatable_metadata();
 
-          // With the resource behavior forever locked, our auth no longer has any use
-          // We will burn our auth badge, and the holders of the other badges may burn them at will
-          // Our badge has the allows everybody to burn, so there's no need to provide a burning authority
+            // With the resource behavior forever locked, our auth no longer has any use
+            // We will burn our auth badge, and the holders of the other badges may burn them at will
+            // Our badge has the allows everybody to burn, so there's no need to provide a burning authority
         }
 
         //["name", "symbol", "icon_url", "url", "author", "stage"]
-        pub fn get_token_metadata(token_addr: ResourceAddress, keys_owned: Vec<String>) -> (u8, NonFungibleIdType, Decimal, Vec<String>) {
-          let manager: ResourceManager = borrow_resource_manager!(token_addr);
+        pub fn get_token_metadata(
+            token_addr: ResourceAddress,
+            keys_owned: Vec<String>,
+        ) -> (u8, NonFungibleIdType, Decimal, Vec<String>) {
+            let manager: ResourceManager = ResourceManager::from_address(token_addr);
 
-          let mut divisibility: u8 = 255;
-          let mut non_fungible_id_type = NonFungibleIdType::Integer;
-          match manager.resource_type() {
-              ResourceType::Fungible{divisibility: div} => {
-                  info!("Fungible resource with divisibility {}", div);
-                  divisibility = div;
-              },
-              ResourceType::NonFungible { id_type: nft_id_type } => {
-                  info!("Non Fungible resource found with id_type: {:?}", nft_id_type);
-                  non_fungible_id_type = nft_id_type;
-              }
-          }
-          let total_supply = manager.total_supply();
-          info!("Total supply: {}", total_supply);
+            let mut divisibility: u8 = 255;
+            let mut non_fungible_id_type = NonFungibleIdType::Integer;
+            match manager.resource_type() {
+                ResourceType::Fungible { divisibility: div } => {
+                    info!("Fungible resource with divisibility {}", div);
+                    divisibility = div;
+                }
+                ResourceType::NonFungible {
+                    id_type: nft_id_type,
+                } => {
+                    info!(
+                        "Non Fungible resource found with id_type: {:?}",
+                        nft_id_type
+                    );
+                    non_fungible_id_type = nft_id_type;
+                }
+            }
 
-          let mut values: Vec<String> = vec![];
-          for key in keys_owned {
-            let y = manager.metadata().get_string(key).map_or("no_value".to_owned(), |v| v);
-            values.push(y);
-          }
-          (divisibility, non_fungible_id_type, total_supply, values)
+            let total_supply = manager.total_supply().unwrap_or_default();
+            info!("Total supply: {}", total_supply);
+
+            /* fn get_metadata<K: ToString, V: MetadataVal>(&self, name: K) -> Result<Option<V>, MetadataConversionError> {
+                self.metadata().get(name)
+            }*/
+            let mut values: Vec<String> = vec![];
+            /*if keys_owned.len() > 0 {
+                let value0 = manager
+                    .get_metadata(keys_owned[0].clone())
+                    .unwrap_or_else(|e| Some("MetadataConversioniError".to_owned()));
+                let value00 = value0.unwrap_or_else(|| "err".to_owned());
+                values.push(value00)
+            }*/
+
+            let mut value_op: Option<String>;
+            let mut value: String;
+            for key in keys_owned {
+                value_op = manager
+                    .get_metadata(key)
+                    .unwrap_or_else(|_e| Some("MetadataConversioniError".to_owned()));
+                value = value_op.unwrap_or_else(|| "err".to_owned());
+                values.push(value)
+                //.map_or("no_value".to_owned(), |v| v);
+            }
+            (divisibility, non_fungible_id_type, total_supply, values)
         }
 
         pub fn get_vault_data(&self) -> (u16, Decimal, Decimal) {
             let amount = self.token_vault.amount();
-            info!("Current version: {}, vault_amount: {}, total_supply:{}", self.version, amount, self.total_supply );
+            info!(
+                "Current version: {}, vault_amount: {}, total_supply:{}",
+                self.version, amount, self.total_supply
+            );
             (self.version, amount, self.total_supply)
         }
         pub fn set_version(&mut self, new_version: u16) {
@@ -191,71 +269,3 @@ mod stable_coin_vault {
         }
     }
 }
-/*
-                .method(
-                    "set_withdrawable_vault",
-                    rule!(
-                        require(admin_badge.resource_address())
-                            || require(wd_badge.resource_address())
-                    ), AccessRule::DenyAll
-                )
-                .method(
-                    "lift_restriction",
-                    rule!(require(admin_badge.resource_address())), AccessRule::DenyAll
-                )
-
-        /// Either the general admin or withdraw badge may be used to seal withdrawing tokens from the vault
-        pub fn set_withdrawable_vault(&self, is_withdrawable: bool) {
-            // this function will fail if stage >= 3 and the token behavior has been locked
-            let token_rmgr: &mut ResourceManager =
-                borrow_resource_manager!(self.token_vault.resource_address());
-
-            self.auth.authorize(|| {
-                if is_withdrawable {
-                    token_rmgr.set_withdrawable(rule!(
-                        require(self.admin_addr)
-                            || require(self.auth.resource_address())
-                    ));
-                    info!("Token withdraw is now RESTRICTED");
-                } else {
-                    token_rmgr.set_withdrawable(rule!(allow_all));
-                    info!("Token withdraw is lifted");
-                }
-            })
-        }
-
-        pub fn lift_restriction(&mut self) {
-            // Adding the auth badge to the component auth zone to allow for the operations below
-            info!("lift_restriction...");
-            ComponentAuthZone::push(self.auth.create_proof());
-
-            assert!(self.version <= 2, "Already at version > 2");
-            let token_rmgr: &mut ResourceManager =
-                borrow_resource_manager!(self.token_vault.resource_address());
-
-            info!("version: {}", self.version);
-            if self.version == 1 {
-              info!("check11");
-              self.version = 2;
-                token_rmgr.set_metadata("stage".into(), "stage 2 - Unlimited supply, may be restricted withdraw".into());
-                // set token minting to only auth
-                token_rmgr
-                    .set_mintable(rule!(require(self.auth.resource_address())));
-                info!("check12");
-
-                // Drop the last added proof to the component auth zone
-                ComponentAuthZone::pop().drop();
-                info!("check13");
-            } else {
-                self.version = 3;
-                info!("check21");
-                // Update token's metadata to reflect the final version
-
-                // Drop the last added proof to the component auth zone
-                info!("check24");
-                ComponentAuthZone::pop().drop();
-                self.auth.take_all().burn();
-                info!("check25");
-            }
-        }
-*/
