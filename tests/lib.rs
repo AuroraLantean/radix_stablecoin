@@ -1,5 +1,6 @@
 use scrypto::prelude::*;
 use scrypto_unit::*;
+//use transaction::builder::ManifestBuilder;
 
 mod helper;
 use helper::*;
@@ -7,9 +8,31 @@ use helper::*;
 #[test]
 fn test_stablecoin() {
     // Setup the environment
-    let mut test_runner = TestRunner::builder().build();
+    let mut test_runner = TestRunnerBuilder::new().build();
+    println!("---checkpoint-1");
 
-    let (user1, user2, user3) = make_users(&mut test_runner);
+    let (public_key, private_key, account) = test_runner.new_allocated_account();
+    println!("---checkpoint-1b");
+    let user1 = User {
+        public_key,
+        private_key,
+        compo_addr: account,
+    };
+    println!("---checkpoint-1c");
+    let (public_key2, private_key2, account2) = test_runner.new_allocated_account();
+    let user2 = User {
+        public_key: public_key2,
+        private_key: private_key2,
+        compo_addr: account2,
+    };
+
+    // Create an accounts
+    //let (user1, user2, user3) = make_users(&mut test_runner);
+    println!("---checkpoint-2");
+
+    // Publish package
+    let package_address = test_runner.compile_and_publish(this_package!());
+    println!("package_address: {:?}", package_address);
 
     let total_supply_original = dec!(1000000);
     let mut u1token_exp = dec!(0);
@@ -29,10 +52,11 @@ fn test_stablecoin() {
 
     let values_str = vec![token_name, token_symbol, icon_url, url, author, stage];
     let values_owned = convert_str_slices(values_str);
-    println!("test4");
+    println!("---checkpoint-4");
 
-    let (resources, package_addr, compo_addr) = deploy_blueprint(
+    let (resources, compo_addr) = instantiate_blueprint(
         &mut test_runner,
+        package_address,
         blueprint_name,
         "new",
         total_supply_original,
@@ -40,8 +64,8 @@ fn test_stablecoin() {
         values_owned.clone(),
         &user1,
     );
+    println!("---checkpoint-5");
     println!("resources: {:?}", resources);
-    println!("package_addr: {:?}", package_addr);
     println!("compo_addr: {:?}", compo_addr);
     assert_eq!(resources.len(), 4);
 
@@ -66,7 +90,12 @@ fn test_stablecoin() {
     assert_eq!(u2token, u2token);
 
     println!("-----------------== check vault balances");
-    let v1auth_badge = get_vault_balc(&mut test_runner, compo_addr, auth_badge_addr, "v1auth_badge");
+    let v1auth_badge = get_vault_balc(
+        &mut test_runner,
+        compo_addr,
+        auth_badge_addr,
+        "v1auth_badge",
+    );
     assert_eq!(v1auth_badge[0], dec!(1));
 
     let v1token = get_vault_balc(&mut test_runner, compo_addr, token_addr, "v1token");
@@ -74,9 +103,9 @@ fn test_stablecoin() {
 
     //----------------== get_vault_data
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.0, 1);
-    assert_eq!(data.2, total_supply_original);
-*/
+        assert_eq!(data.0, 1);
+        assert_eq!(data.2, total_supply_original);
+    */
 
     println!("-----------------== mint_to_bucket");
     let amount = dec!(1000);
@@ -91,10 +120,10 @@ fn test_stablecoin() {
         badge_amount,
     );
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply + amount);
-    total_supply += amount;
-    println!("total supply increased accordingly");
-*/
+        assert_eq!(data.2, total_supply + amount);
+        total_supply += amount;
+        println!("total supply increased accordingly");
+    */
     let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
     assert_eq!(u1token, amount);
     u1token_exp = u1token;
@@ -105,8 +134,7 @@ fn test_stablecoin() {
     v1token_exp = total_supply_original;
     println!("vault token balance stays the same");
 
-
-    println!("-----------------== Sending user1 to user2");
+    println!("-----------------== Sending tokens from user1 to user2");
     let amount = dec!(123);
     send_tokens(
         &mut test_runner,
@@ -116,7 +144,7 @@ fn test_stablecoin() {
         amount,
         token_addr,
     );
-    let u1token = get_user_balc(&mut test_runner, &user1, token_addr,"u1token");
+    let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
     assert_eq!(u1token, u1token_exp - amount);
     u1token_exp = u1token;
 
@@ -143,9 +171,9 @@ fn test_stablecoin() {
     println!("vault amount increased accordingly");
 
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply + amount);
-    total_supply += amount;
-*/
+        assert_eq!(data.2, total_supply + amount);
+        total_supply += amount;
+    */
 
     println!("-----------------== withdraw_to_bucket");
     let amount = dec!(937);
@@ -164,13 +192,12 @@ fn test_stablecoin() {
     v1token_exp = v1token[0];
     println!("vault amount decreased accordingly");
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply);
-*/
+        assert_eq!(data.2, total_supply);
+    */
     let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
     assert_eq!(u1token, u1token_exp + amount);
     u1token_exp = u1token;
     println!("u1token increased accordingly");
-
 
     println!("-----------------== deposit");
     let amount = dec!(37);
@@ -190,13 +217,12 @@ fn test_stablecoin() {
     v1token_exp = v1token[0];
     println!("vault amount increased accordingly");
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply);
-*/
+        assert_eq!(data.2, total_supply);
+    */
     let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
     assert_eq!(u1token, u1token_exp - amount);
     u1token_exp = u1token;
     println!("u1token decreased accordingly");
-
 
     println!("-----------------== burn_in_vault");
     let amount = dec!(100);
@@ -215,9 +241,9 @@ fn test_stablecoin() {
     v1token_exp = v1token[0];
     println!("vault amount decreased accordingly");
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply - amount);
-    total_supply -= amount;
-*/
+        assert_eq!(data.2, total_supply - amount);
+        total_supply -= amount;
+    */
 
     println!("-----------------== burn_in_bucket");
     let amount = dec!(12);
@@ -233,91 +259,91 @@ fn test_stablecoin() {
         badge_amount,
     );
     /*let data = get_vault_data(&mut test_runner, &user1, compo_addr);
-    assert_eq!(data.2, total_supply - amount);
-    total_supply -= amount;
-    assert_eq!(data.1, v1token_exp);
-    println!("vault amount decreased accordingly");
-*/
+        assert_eq!(data.2, total_supply - amount);
+        total_supply -= amount;
+        assert_eq!(data.1, v1token_exp);
+        println!("vault amount decreased accordingly");
+    */
     let u1token = get_user_balc(&mut test_runner, &user1, token_addr, "u1token");
     assert_eq!(u1token, u1token_exp - amount);
     u1token_exp = u1token;
     println!("u1token decreased accordingly");
-/*
-    println!("-----------------== read_metadata");
-    let function_name = "get_token_metadata";
-    let txn_receipt = call_function(
-        &mut test_runner,
-        &user1,
-        package_addr,
-        blueprint_name,
-        function_name,
-        token_addr,
-        keys_owned.clone(),
-    );
-    /*let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt;//.output(1);
-    println!("call_function output:{:?}\n", data);
-    let data_values = vec_option_string(data.3);
+    /*
+        println!("-----------------== read_metadata");
+        let function_name = "get_token_metadata";
+        let txn_receipt = call_function(
+            &mut test_runner,
+            &user1,
+            package_addr,
+            blueprint_name,
+            function_name,
+            token_addr,
+            keys_owned.clone(),
+        );
+        /*let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt;//.output(1);
+        println!("call_function output:{:?}\n", data);
+        let data_values = vec_option_string(data.3);
 
-    assert_eq!(data.0, 18);
-    assert_eq!(data.1, NonFungibleIdType::Integer);
-    assert_eq!(data.2, total_supply);
-    assert!(
-        do_vecs_match(&data_values, &values_owned),
-        "token metadata do not match"
-    );
-    println!("all metadata match accordingly");
-*/
-    println!("-----------------== update_metadata");
-    let badge_amount = dec!(3);
-    let key = "name".to_owned();
-    let value = "Gold Coin".to_owned();
-    update_metadata(
-        &mut test_runner,
-        &user1,
-        compo_addr,
-        key.clone(),
-        value.clone(),
-        admin_badge_addr,
-        badge_amount,
-    );
-
-    println!("-----------------== read_metadata");
-    let function_name = "get_token_metadata";
-    let txn_receipt = call_function(
-        &mut test_runner,
-        &user1,
-        package_addr,
-        blueprint_name,
-        function_name,
-        token_addr,
-        keys_owned.clone(),
-    );
-    println!("txn_receipt:{:?}",txn_receipt);
-    /*let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt;
-    println!("call_function output:{:?}\n", data);
-    let data_values = vec_option_string(data.3);
-
-    assert_eq!(data.0, 18);
-    assert_eq!(data.1, NonFungibleIdType::Integer);
-    assert_eq!(data.2, total_supply);
-
-    let (values_owned, _) = find_replace_two_vec(values_owned, &keys_owned, &key, value.clone());
-    println!("new values_owned:{:?}", values_owned);
-    assert!(
-        do_vecs_match(&data_values, &values_owned),
-        "token metadata do not match"
-    );
-    println!("all metadata match accordingly");
-*/
-    println!("-----------------== set_token_stage_three");
-    let badge_amount = dec!(3);
-    invoke_badge_access(
-        &mut test_runner,
-        &user1,
-        compo_addr,
-        "set_token_stage_three",
-        admin_badge_addr,
-        badge_amount,
-    );
+        assert_eq!(data.0, 18);
+        assert_eq!(data.1, NonFungibleIdType::Integer);
+        assert_eq!(data.2, total_supply);
+        assert!(
+            do_vecs_match(&data_values, &values_owned),
+            "token metadata do not match"
+        );
+        println!("all metadata match accordingly");
     */
+        println!("-----------------== update_metadata");
+        let badge_amount = dec!(3);
+        let key = "name".to_owned();
+        let value = "Gold Coin".to_owned();
+        update_metadata(
+            &mut test_runner,
+            &user1,
+            compo_addr,
+            key.clone(),
+            value.clone(),
+            admin_badge_addr,
+            badge_amount,
+        );
+
+        println!("-----------------== read_metadata");
+        let function_name = "get_token_metadata";
+        let txn_receipt = call_function(
+            &mut test_runner,
+            &user1,
+            package_addr,
+            blueprint_name,
+            function_name,
+            token_addr,
+            keys_owned.clone(),
+        );
+        println!("txn_receipt:{:?}",txn_receipt);
+        /*let data: (u8, NonFungibleIdType, Decimal, Vec<String>) = txn_receipt;
+        println!("call_function output:{:?}\n", data);
+        let data_values = vec_option_string(data.3);
+
+        assert_eq!(data.0, 18);
+        assert_eq!(data.1, NonFungibleIdType::Integer);
+        assert_eq!(data.2, total_supply);
+
+        let (values_owned, _) = find_replace_two_vec(values_owned, &keys_owned, &key, value.clone());
+        println!("new values_owned:{:?}", values_owned);
+        assert!(
+            do_vecs_match(&data_values, &values_owned),
+            "token metadata do not match"
+        );
+        println!("all metadata match accordingly");
+    */
+        println!("-----------------== set_token_stage_three");
+        let badge_amount = dec!(3);
+        invoke_badge_access(
+            &mut test_runner,
+            &user1,
+            compo_addr,
+            "set_token_stage_three",
+            admin_badge_addr,
+            badge_amount,
+        );
+        */
 }

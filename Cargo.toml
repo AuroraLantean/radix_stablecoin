@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 sbor = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.0.0" }
 scrypto = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.0.0" }
+radix-engine-stores = { git = "https://github.com/radixdlt/radixdlt-scrypto", tag = "v1.0.0" }
 #native-sdk = { git = "https://github.com/radixdlt/native-sdk", tag = "v1.0.0" }
 
 [dev-dependencies]
