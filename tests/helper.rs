@@ -29,6 +29,20 @@ pub fn make_one_user(test_runner: &mut TestRunner<NoExtension, InMemorySubstateD
         compo_addr,
     }
 }
+#[allow(unused)]
+pub fn make_badge(badge_name: &str) -> FungibleBucket {
+    let owner_badge: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
+        .divisibility(DIVISIBILITY_NONE)
+        .metadata(metadata!(
+            init {
+                "name" => badge_name, locked;
+            }
+        ))
+        .mint_initial_supply(1);
+
+    owner_badge
+}
+
 pub fn get_nft_gid(pk: &Secp256k1PublicKey) -> NonFungibleGlobalId {
     NonFungibleGlobalId::from_public_key(pk)
 }
@@ -42,6 +56,7 @@ pub fn instantiate_blueprint(
     keys_owned: Vec<String>,
     values_owned: Vec<String>,
     user: &User,
+    owner_badge_addr: ResourceAddress,
 ) -> (IndexSet<ResourceAddress>, ComponentAddress) {
     println!("--------== instantiate_blueprint");
 
@@ -52,7 +67,7 @@ pub fn instantiate_blueprint(
             package_addr,
             blueprint_name,
             func_name,
-            manifest_args!(total_supply, keys_owned, values_owned),
+            manifest_args!(total_supply, keys_owned, values_owned, owner_badge_addr),
         )
         .call_method(
             user.compo_addr,

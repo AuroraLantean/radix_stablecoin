@@ -2,7 +2,9 @@ use scrypto::prelude::*;
 // credit: thanks to Scrypto-Example/regulated-token
 // admin, version, withdraw, mint, burn,
 
-//mod another;// to import "another.rs"
+//pub mod gumball_club;//to import gumball_club.rs
+//pub mod gumball_machine;
+
 /* #[derive(ScryptoSbor, NonFungibleData)]
 pub struct RoyaltyShare {
     pub name: String,
@@ -24,12 +26,12 @@ mod stable_coin_vault {
             change_price => restrict_to: [admin];
             mint_to_bucket => restrict_to: [admin];
             mint_to_vault => restrict_to: [admin];
-            withdraw_to_bucket => restrict_to: [admin];
+            withdraw_to_bucket => restrict_to: [OWNER];
             deposit_to_vault => PUBLIC;
-            burn_in_vault => restrict_to: [admin];
+            burn_in_vault => restrict_to: [super_admin];
             burn_in_bucket => restrict_to: [admin];
             update_metadata => restrict_to: [admin];
-            set_token_stage_three => restrict_to: [admin];
+            set_token_stage_three => restrict_to: [super_admin, OWNER];
             //redeem_profits => restrict_to: [super_admin, OWNER];
             get_vault_data => PUBLIC;
             set_version => restrict_to: [super_admin];
@@ -47,8 +49,8 @@ mod stable_coin_vault {
             total_supply: Decimal,
             keys: Vec<String>,
             values: Vec<String>,
-            owner_badge: ResourceAddress,
-        ) -> (Global<StableCoinVault>, Bucket) {
+            owner_badge_addr: ResourceAddress,
+        ) -> (Global<StableCoinVault>, Bucket, Bucket) {
             info!("StableCoin new(): total_supply = {}", total_supply);
 
             // super_admin
@@ -56,20 +58,20 @@ mod stable_coin_vault {
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata(metadata! {
                   init {
-                      "name" => "super_admin".to_owned(), locked;
+                      "name" => "super_admin", locked;
                   }
                 })
-                .mint_initial_supply(1);
+                .mint_initial_supply(2);
 
             // admin_badge
             let admin_badge: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(DIVISIBILITY_NONE)
                 .metadata(metadata! {
                   init {
-                      "name" => "admin_badge".to_owned(), locked;
+                      "name" => "admin_badge", locked;
                   }
                 })
-                .mint_initial_supply(3);
+                .mint_initial_supply(1);
 
             let my_bucket: FungibleBucket = ResourceBuilder::new_fungible(OwnerRole::None)
                 .divisibility(DIVISIBILITY_MAXIMUM)
@@ -92,13 +94,14 @@ mod stable_coin_vault {
                 version: 1,
             }
             .instantiate()
-            .prepare_to_globalize(OwnerRole::Fixed(rule!(require(owner_badge))))
+            .prepare_to_globalize(OwnerRole::Fixed(rule!(require(owner_badge_addr))))
             .roles(roles!(
-                super_admin => rule!(require(super_admin_badge.resource_address()));
+                super_admin => rule!(require_amount(dec!(2),super_admin_badge.resource_address()));
                 admin => rule!(require(admin_badge.resource_address()));
             ))
             .globalize();
-            return (component, admin_badge.into());
+            //OwnerRole::None
+            return (component, super_admin_badge.into(), admin_badge.into());
         }
 
         pub fn free_token(&mut self) -> Bucket {
